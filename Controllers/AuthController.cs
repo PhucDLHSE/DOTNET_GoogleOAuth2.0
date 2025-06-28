@@ -1,35 +1,32 @@
 using Google.Apis.Auth;
 using Microsoft.AspNetCore.Mvc;
-using SmartClass.Backend.Models;
-using SmartClass.Backend.Data;
 using Microsoft.EntityFrameworkCore;
+using DotnetGoogleOAuth2.Data;
+using DotnetGoogleOAuth2.Models;
+using DotnetGoogleOAuth2.Services;
 
-namespace SmartClass.Backend.Controllers
+
+namespace DotnetGoogleOAuth2.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
     public class AuthController : ControllerBase
     {
         private readonly AppDbContext _context;
-        private readonly string _googleAudience;
-        private readonly HashSet<string> _adminWhitelist;
+        private readonly IRoleResolver _roleResolver;
+        private readonly IConfiguration _config;
 
-        public AuthController(AppDbContext context)
+        public AuthController(AppDbContext context, IRoleResolver roleResolver, IConfiguration config)
         {
             _context = context;
-            _googleAudience = Environment.GetEnvironmentVariable("GOOGLE_AUDIENCE")
-                ?? throw new InvalidOperationException("GOOGLE_AUDIENCE is not set.");
-
-            var whitelistRaw = Environment.GetEnvironmentVariable("ADMIN_WHITELIST") ?? "";
-            _adminWhitelist = whitelistRaw
-                .Split(",", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            _roleResolver = roleResolver;
+            _config = config;
         }
 
         [HttpPost("google-mobile")]
         public async Task<IActionResult> GoogleMobileLogin([FromBody] GoogleLoginRequest request)
         {
-            if (string.IsNullOrEmpty(request.IdToken))
+            if (string.IsNullOrWhiteSpace(request.IdToken))
                 return BadRequest("IdToken is required");
 
             GoogleJsonWebSignature.Payload payload;
@@ -37,7 +34,7 @@ namespace SmartClass.Backend.Controllers
             {
                 payload = await GoogleJsonWebSignature.ValidateAsync(request.IdToken, new GoogleJsonWebSignature.ValidationSettings
                 {
-                    Audience = new[] { _googleAudience }
+                    Audience = new[] { _config["GOOGLE_AUDIENCE"] ?? throw new Exception("GOOGLE_AUDIENCE not set") }
                 });
             }
             catch (Exception ex)
@@ -45,41 +42,36 @@ namespace SmartClass.Backend.Controllers
                 return Unauthorized(new { error = "Invalid token", details = ex.Message });
             }
 
-            var existingUser = await _context.Users
-                .FirstOrDefaultAsync(u => u.Email == payload.Email && u.Provider == "google");
-
-            if (existingUser == null)
+            var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == payload.Email && u.Provider == "google");
+            if (user == null)
             {
-                string role = _adminWhitelist.Contains(payload.Email)
-                    ? "admin"
-                    : payload.Email.EndsWith("@fpt.edu.vn", StringComparison.OrdinalIgnoreCase)
-                        ? "lecturer"
-                        : "student";
-
-                var newUser = new User
+                user = new User
                 {
                     Name = payload.Name,
                     Email = payload.Email,
                     Avatar = payload.Picture,
                     GoogleId = payload.Subject,
                     Provider = "google",
-                    Role = role,
-                    EmailVerified = true,
+                    Role = _roleResolver.ResolveRole(payload.Email),
+                    EmailVerified = true
                 };
-
-                _context.Users.Add(newUser);
+                _context.Users.Add(user);
                 await _context.SaveChangesAsync();
-                existingUser = newUser;
             }
 
             return Ok(new
             {
-                UserId = existingUser.UserId,
-                Email = existingUser.Email,
-                Name = existingUser.Name,
-                Avatar = existingUser.Avatar,
-                Role = existingUser.Role
+                userId = user.UserId,
+                email = user.Email,
+                name = user.Name,
+                avatar = user.Avatar,
+                role = user.Role
             });
         }
+    }
+
+    public class GoogleLoginRequest
+    {
+        public string IdToken { get; set; } = string.Empty;
     }
 }

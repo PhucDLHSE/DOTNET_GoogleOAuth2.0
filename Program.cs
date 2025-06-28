@@ -1,36 +1,29 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.Google;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using DotNetEnv;
-using SmartClass.Backend.Data;
+using DotnetGoogleOAuth2.Services;
 using Pomelo.EntityFrameworkCore.MySql.Infrastructure;
+using DotnetGoogleOAuth2.Data;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ---------- Load biến môi trường ----------
+// ✅ Load cấu hình từ .env
 Env.Load();
 
-// ---------- Cấu hình từ biến môi trường ----------
-var googleClientId = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID")
+string googleClientId = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID")
     ?? throw new InvalidOperationException("GOOGLE_CLIENT_ID is not set.");
-
-var googleClientSecret = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_SECRET")
+string googleClientSecret = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_SECRET")
     ?? throw new InvalidOperationException("GOOGLE_CLIENT_SECRET is not set.");
-
-var rawCallbackUrl = Environment.GetEnvironmentVariable("GOOGLE_CALLBACK_URL");
-var googleCallbackPath = string.IsNullOrWhiteSpace(rawCallbackUrl)
-    ? "/auth/google/callback"
-    : rawCallbackUrl.StartsWith("/") ? rawCallbackUrl : "/" + rawCallbackUrl;
-
-var connectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION_STRING")
+string googleCallbackPath = Environment.GetEnvironmentVariable("GOOGLE_CALLBACK_URL") ?? "/auth/google/callback";
+string googleAudience = Environment.GetEnvironmentVariable("GOOGLE_AUDIENCE")
+    ?? throw new InvalidOperationException("GOOGLE_AUDIENCE is not set.");
+string[] adminWhitelist = Environment.GetEnvironmentVariable("ADMIN_WHITELIST")?.Split(',') ?? Array.Empty<string>();
+string connectionString = Environment.GetEnvironmentVariable("MYSQL_CONNECTION_STRING")
     ?? throw new InvalidOperationException("MYSQL_CONNECTION_STRING is not set.");
 
-// ---------- Đăng ký Service ----------
-
-// ✅ Google OAuth + Cookie
+// ✅ Đăng ký dịch vụ
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultScheme = CookieAuthenticationDefaults.AuthenticationScheme;
@@ -45,7 +38,6 @@ builder.Services.AddAuthentication(options =>
     options.SaveTokens = true;
 });
 
-// ✅ CORS (cho mobile app gọi thoải mái)
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
@@ -56,22 +48,23 @@ builder.Services.AddCors(options =>
     });
 });
 
-// ✅ EF Core + MySQL
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
 
-// ✅ Controller API
 builder.Services.AddControllers();
 
-// ---------- Build App ----------
+// ✅ Inject custom role resolver và biến cấu hình
+builder.Services.AddSingleton<IRoleResolver, DefaultRoleResolver>();
+builder.Services.AddSingleton(adminWhitelist);
+builder.Services.AddSingleton(googleAudience);
+
 var app = builder.Build();
 
+// ✅ Middleware pipeline
 app.UseRouting();
 app.UseCors();
-
-app.UseAuthentication();  
+app.UseAuthentication();
 app.UseAuthorization();
-
 app.MapControllers();
 
 app.Run();

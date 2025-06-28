@@ -2,7 +2,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SmartClass.Backend", "SmartClass.Backend.csproj", "{6C91711F-9230-6E51-D7B3-99663E968AD9}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") ="DOTNET_GOOGLEOAUTH2.0", "DOTNET_GOOGLEOAUTH2.0.csproj", "{6C91711F-9230-6E51-D7B3-99663E968AD9}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
